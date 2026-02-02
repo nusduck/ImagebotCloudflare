@@ -1,0 +1,18 @@
+# Secrets / local env
+.env
+api/.env
+
+# Local configs with keys (create from examples)
+api_config.json
+
+# Logs & caches
+logs/
+__pycache__/
+api/__pycache__/
+*.pyc
+
+# Legacy archive (contains historical stuff, may include secrets)
+legacy/
+
+# OS
+.DS_Store

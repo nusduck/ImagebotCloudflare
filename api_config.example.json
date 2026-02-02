@@ -1,0 +1,12 @@
+{
+  "deepseek": {
+    "base_url": "https://api.deepseek.com",
+    "key": "",
+    "models": "deepseek-chat"
+  },
+  "flux": {
+    "base_url": "https://flux.kygoho.workers.dev/v1/",
+    "key": "",
+    "models": "@cf/black-forest-labs/flux-1-schnell"
+  }
+}
