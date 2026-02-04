@@ -6,7 +6,7 @@ from logging.handlers import RotatingFileHandler
 import telebot
 from dotenv import load_dotenv
 
-from api.CloudImage import generate_image_sdxl
+from api.CloudImage import generate_image_sdxl, generate_image_leonardo
 from api.NewImage import generate_image_flux_url
 
 
@@ -55,6 +55,7 @@ def reset_menu():
                 telebot.types.BotCommand("start", "说明 / 帮助"),
                 telebot.types.BotCommand("image", "用 SDXL 生成图片：/image 提示词"),
                 telebot.types.BotCommand("flux", "用 FLUX 生成图片：/flux 提示词"),
+                telebot.types.BotCommand("leonardo", "用 Leonardo Phoenix 生成图片：/leonardo 提示词"),
             ]
         )
         logger.info("Bot menu (commands) reset")
@@ -73,9 +74,11 @@ def handle_start(message):
                 "\n命令：",
                 "/image 关键词 - SDXL 出图（会用 DeepSeek 自动润色 prompt）",
                 "/flux 关键词 - FLUX 出图",
+                "/leonardo 关键词 - Leonardo Phoenix 1.0 出图",
                 "\n例子：",
                 "/image 抽象 大海 16:9",
                 "/flux cyberpunk city night, neon, rain",
+                "/leonardo futuristic cat astronaut, cinematic",
             ]
         ),
     )
@@ -102,6 +105,36 @@ def handle_image(message):
         bot.send_photo(message.chat.id, img_bytes, caption=caption)
     except Exception as e:
         logger.exception("/image failed")
+        bot.reply_to(message, f"出图失败：{type(e).__name__}: {e}")
+    finally:
+        if thinking:
+            try:
+                bot.delete_message(message.chat.id, thinking.message_id)
+            except Exception:
+                pass
+
+
+@bot.message_handler(commands=["leonardo"])
+def handle_leonardo(message):
+    prompt = (message.text or "")[9:].strip()
+    if not prompt:
+        bot.reply_to(message, "用法：/leonardo 提示词（例如：/leonardo futuristic cat astronaut）")
+        return
+
+    logger.info("/leonardo from=%s chat=%s prompt=%r", message.from_user.id, message.chat.id, prompt)
+
+    thinking = None
+    try:
+        thinking = bot.reply_to(message, "Drawing (Leonardo Phoenix)...")
+    except Exception:
+        pass
+
+    try:
+        img_bytes, meta = generate_image_leonardo(prompt)
+        caption = f"Leonardo Phoenix | {meta.get('width')}x{meta.get('height')} | {meta.get('final_prompt','')[:120]}"
+        bot.send_photo(message.chat.id, img_bytes, caption=caption)
+    except Exception as e:
+        logger.exception("/leonardo failed")
         bot.reply_to(message, f"出图失败：{type(e).__name__}: {e}")
     finally:
         if thinking:

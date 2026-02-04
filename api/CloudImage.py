@@ -23,6 +23,7 @@ GATEWAY_ID = os.getenv("gateway_id")
 CLOUDFLARE_TOKEN = os.getenv("cloudflare_token")
 
 SDXL_ENDPOINT = "@cf/stabilityai/stable-diffusion-xl-base-1.0"
+LEONARDO_PHOENIX_ENDPOINT = "@cf/leonardo/phoenix-1.0"
 
 
 def _load_config() -> Dict:
@@ -130,3 +131,54 @@ def generate_image_sdxl(user_text: str) -> Tuple[bytes, Dict]:
         return base64.b64decode(b64), {"final_prompt": final_prompt, "width": width, "height": height}
     except Exception as e:
         raise RuntimeError(f"Unexpected gateway response (not image, not json-with-b64). content-type={ct}. error={e}")
+
+
+def generate_image_leonardo(user_text: str) -> Tuple[bytes, Dict]:
+    """Generate image bytes via Cloudflare AI Gateway -> Workers AI (Leonardo Phoenix 1.0)."""
+    if not ACCOUNT_ID or not GATEWAY_ID or not CLOUDFLARE_TOKEN:
+        raise RuntimeError("Missing Cloudflare gateway env vars: account_id/gateway_id/cloudflare_token")
+
+    width, height = _pick_size_from_text(user_text)
+    # Re-use SDXL prompt expansion logic for now
+    final_prompt = _deepseek_prompt(user_text, width=width, height=height)
+    if not final_prompt:
+        raise RuntimeError("DeepSeek returned empty prompt")
+
+    payload = [
+        {
+            "provider": "workers-ai",
+            "endpoint": LEONARDO_PHOENIX_ENDPOINT,
+            "headers": {
+                "Authorization": f"Bearer {CLOUDFLARE_TOKEN}",
+                "Content-Type": "application/json",
+            },
+            "query": {
+                "prompt": final_prompt,
+                # Leonardo Phoenix supports width/height, though limits may vary
+                "width": width,
+                "height": height,
+            },
+        }
+    ]
+
+    url = f"https://gateway.ai.cloudflare.com/v1/{ACCOUNT_ID}/{GATEWAY_ID}/"
+    resp = requests.post(url, headers={"Content-Type": "application/json"}, data=json.dumps(payload), timeout=180)
+    resp.raise_for_status()
+
+    ct = (resp.headers.get("content-type") or "").lower()
+    if ct.startswith("image/"):
+        return resp.content, {"final_prompt": final_prompt, "width": width, "height": height, "model": "leonardo-phoenix"}
+
+    try:
+        obj = resp.json()
+        b64 = None
+        if isinstance(obj, dict):
+            if isinstance(obj.get("result"), dict):
+                b64 = obj["result"].get("image") or obj["result"].get("image_base64")
+            b64 = b64 or obj.get("image") or obj.get("image_base64")
+        if not b64:
+             raise RuntimeError(f"Unexpected gateway response content-type={ct}")
+        import base64
+        return base64.b64decode(b64), {"final_prompt": final_prompt, "width": width, "height": height, "model": "leonardo-phoenix"}
+    except Exception as e:
+        raise RuntimeError(f"Unexpected gateway response. error={e}")
